@@ -115,30 +115,38 @@ import matplotlib.pyplot as plt    # The plotting library
 
 ```{python}
 def read_fasta(filename: str) -> Dict[str, str]:
-    """
-    Reads a FASTA file and returns a dictionary of sequences.
+    """Reads sequences from FASTA file.
 
     Args:
-        filename (str): Path to the FASTA file.
+        filename (str): Path to FASTA file containing HIV RT sequences
 
     Returns:
-        Dict[str, str]: Dictionary mapping sequence IDs to their sequences.
+        Dict[str, str]: Dictionary mapping sequence IDs to sequences
+
+    Examples:
+        >>> seqs = read_fasta("lafayette_SARS_RT.fasta")
+        >>> len(seqs) > 0
+        True
     """
-    sequences = {}
-    current_id = None
-    with open(filename, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
+    
+    with open(filename, 'r') as ifile:
+        
+        name=''
+
+        mapping = {}
+
+        for line in ifile:
+            
             if line.startswith('>'):
-                # It's a header line, start a new sequence entry
-                current_id = line[1:].split()[0] # Use only the first part of the header as ID
-                sequences[current_id] = ""
-            elif current_id:
-                # It's a sequence line, append to the current sequence
-                sequences[current_id] += line
-    return sequences
+
+                name = line[1:].strip()
+                mapping[name] = ""
+
+            else:
+
+                mapping[name] += line.strip()
+    
+    return mapping
 
 ```
 
