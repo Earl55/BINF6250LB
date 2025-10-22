@@ -1,6 +1,6 @@
 ---
 title: "Project 06: Hierarchical Clustering"
-author: "Your Name"
+author: "Little Butler & Tiange Feng"
 date: "`r format(Sys.time(), '%Y%m%d')`"
 output:
   github_document:
