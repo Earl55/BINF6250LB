@@ -185,12 +185,12 @@ END FUNCTION
 Realizing that we can optimize some of the functions
 
 # Struggles
-The ete3 package was the major issue of this assignment. Before I chose to ask the class group chat I tried sp many ways to get this installed. Tiaage was able to realize using the bioconda env
+The ete3 package was the major issue of this assignment. Before I chose to ask the class group chat I tried sp many ways to get this installed. Tiange was able to realize using the bioconda env
 
 # Personal Reflections
 ## Group Leader
-I was so nervous to be the group the leader because I thought i was not ready. I read the background and tried to understand the background more. I went through the old modules and PRs to understand if I was
-setting up the repo correctly. I  had major issues with the installing of the ete3 package. After a day or two of trying this find ways to install this. By switching python enviroments and even trying to look at the version. I was able with the help of Tiage simplfying the read fasta file function. Working with Tiaggge was very collaborative and constructive.
+I was so nervous to be the group the leader because I thought I was not ready. I read the background and tried to understand the background more. I went through the old modules and PRs to understand if I was
+setting up the repo correctly. I  had major issues with the installing of the ete3 package. After a day or two of trying this find ways to install this. By switching python enviroments and even trying to look at the version. I was able with the help of Tiange simplfying the read fasta file function. Working with Tiange was very collaborative and constructive.
 
 ## Other member
 
