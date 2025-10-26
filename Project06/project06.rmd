@@ -1,0 +1,448 @@
+---
+title: "Project 06: Hierarchical Clustering"
+author: "Your Name"
+date: "`r format(Sys.time(), '%Y%m%d')`"
+output:
+  github_document:
+    html_preview: false
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+library('reticulate')
+```
+
+---
+
+## Learning Objectives
+
+1. Implement a distance-based phylogeny neighbor joining algorithm
+1. Understanding of hierarchical clustering
+1. Manipulation of arrays and lists in Python
+
+---
+
+## Imports
+You will need to install a package called `ete3` for this project. You can do this by the command `conda install ete3`.
+
+```{python}
+from typing import List, Tuple, Dict
+import numpy as np
+import ete3
+```
+
+---
+
+## Background
+
+Today we will implement a distance-based phylogenetic tree construction method using the Neighbor-Joining (NJ) algorithm and Smith-Waterman local alignment scores. Unlike UPGMA (Unweighted Pair Group Method using Arithmetic averages), NJ produces unrooted trees and does not assume a constant evolutionary rate across lineages, making it more biologically realistic for analyzing sequence relationships.
+
+We will use HIV-1 reverse transcriptase sequences to construct our phylogenetic tree. The Smith-Waterman algorithm will be used to generate pairwise local alignment scores, which will then be converted into distances for tree construction. This approach is particularly suitable for HIV sequence analysis as it:
+1. Handles sequence variations effectively through local alignment
+2. Accounts for potential rate heterogeneity across different viral strains
+3. Does not assume a molecular clock
+
+The ultimate output will be an unrooted phylogenetic tree representing the evolutionary relationships between the HIV-1 sequences, visualized using the ete3 library. This method provides insights into viral diversity and evolutionary patterns while avoiding the assumptions of simpler hierarchical clustering approaches.
+
+The key innovations of this implementation are:
+- Use of Smith-Waterman for sensitive local alignment scoring
+- Implementation of Neighbor-Joining for unrooted tree construction
+- More biologically realistic evolutionary model
+
+## Neighbor-Joining Algorithm
+
+**Input**: Distance matrix $D$ for $n$ sequences
+
+**Initialization**:
+- Let $n$ be the number of sequences
+- Assign each sequence $i$ to its own leaf node
+- Initialize tree $T$ with leaf nodes
+
+**Iteration**:
+While $n > 2$:
+1. Calculate Q-matrix where:
+   $Q(i,j) = (n-2)d(i,j) - \sum_{k=1}^n d(i,k) - \sum_{k=1}^n d(j,k)$
+
+2. Find pair $(i,j)$ with minimum $Q(i,j)$
+
+3. Calculate branch lengths:
+   $d_i = \frac{d(i,j) + (r_i - r_j)/(n-2)}{2}$
+   $d_j = d(i,j) - d_i$
+   where $r_i = \sum_{k=1}^n d(i,k)$
+
+4. Create new node $k$
+   - Add branches from $k$ to $i$ and $j$ with lengths $d_i$ and $d_j$
+
+5. Update distances to remaining nodes $x$:
+   $d(k,x) = \frac{d(i,x) + d(j,x) - d(i,j)}{2}$
+
+6. Remove nodes $i$ and $j$
+7. Add node $k$ to active nodes
+8. $n = n - 1$
+
+**Termination**:
+When $n = 2$ with remaining nodes $i$ and $j$:
+- Add final branch between $i$ and $j$ with length $d(i,j)$
+- Return unrooted tree $T$
+
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('reticulate')
+use_python('/usr/bin/python3')
+```
+
+```{r}
+reticulate::py_install(c("biopython", "matplotlib"))
+```
+
+# Import modules
+
+```{python}
+import numpy as np
+from typing import List, Tuple, Dict
+from io import StringIO            # Needed to read the Newick string
+from Bio import Phylo              # The BioPython tree module
+import matplotlib.pyplot as plt    # The plotting library
+```
+
+# Step 1: File Reading
+
+```{python}
+def read_fasta(filename: str) -> Dict[str, str]:
+    """Reads sequences from FASTA file.
+
+    Args:
+        filename (str): Path to FASTA file containing HIV RT sequences
+
+    Returns:
+        Dict[str, str]: Dictionary mapping sequence IDs to sequences
+
+    Examples:
+        >>> seqs = read_fasta("lafayette_SARS_RT.fasta")
+        >>> len(seqs) > 0
+        True
+    """
+    
+    with open(filename, 'r') as ifile:
+        
+        name=''
+
+        mapping = {}
+
+        for line in ifile:
+            
+            if line.startswith('>'):
+
+                name = line[1:].strip()
+                mapping[name] = ""
+
+            else:
+
+                mapping[name] += line.strip()
+    
+    return mapping
+
+```
+
+# Step 2: Smith-Waterman Scoring for Distance Calculation
+
+```{python}
+def smith_waterman_score(sequence1: str, sequence2: str, match_score: float = 1, mismatch_penalty: float = -1, gap_penalty: float = -1) -> float:
+    """
+    Performs the Smith-Waterman algorithm to find the maximum local alignment score.
+    This version is optimized to only return the score, without the full alignment traceback.
+
+    Args:
+        sequence1 (str): The first sequence.
+        sequence2 (str): The second sequence.
+        match_score (float): Score for matching characters.
+        mismatch_penalty (float): Penalty for mismatched characters.
+        gap_penalty (float): Penalty for gaps.
+
+    Returns:
+        float: The maximum raw score from the alignment matrix.
+    """
+    n = len(sequence1)
+    m = len(sequence2)
+    
+    # Initialize the scoring matrix with zeros
+    score_matrix = np.zeros((n + 1, m + 1))
+    max_score = 0.0
+
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            # Calculate the score for a match or mismatch
+            if sequence1[i - 1] == sequence2[j - 1]:
+                match = score_matrix[i - 1, j - 1] + match_score
+            else:
+                match = score_matrix[i - 1, j - 1] + mismatch_penalty
+            
+            # Calculate scores for gaps
+            delete = score_matrix[i - 1, j] + gap_penalty
+            insert = score_matrix[i, j - 1] + gap_penalty
+            
+            # Choose the maximum score, ensuring it's not negative
+            current_score = max(0, match, delete, insert)
+            score_matrix[i, j] = current_score
+            
+            # Keep track of the highest score found so far
+            if current_score > max_score:
+                max_score = current_score
+                
+    return max_score
+```
+
+# Step 3: Build the Distance Matrix
+
+```{python}
+def build_distance_matrix(sequences: Dict[str, str]) -> Tuple[np.ndarray, List[str]]:
+    """
+    Builds a distance matrix for a set of sequences using Smith-Waterman scores.
+
+    Args:
+        sequences (Dict[str, str]): A dictionary mapping sequence IDs to sequences.
+
+    Returns:
+        Tuple[np.ndarray, List[str]]: A tuple containing the distance matrix and the list of sequence IDs.
+    """
+    seq_ids = list(sequences.keys())
+    seq_list = list(sequences.values())
+    n = len(seq_ids)
+    dist_matrix = np.zeros((n, n))
+
+    # Pre-calculate self-alignment scores for normalization
+    self_scores = [smith_waterman_score(s, s) for s in seq_list]
+
+    for i in range(n):
+        for j in range(i, n):
+            if i == j:
+                dist_matrix[i, j] = 0.0
+                continue
+            
+            # 1. Compute pairwise Smith-Waterman alignment score
+            raw_score = smith_waterman_score(seq_list[i], seq_list[j])
+            
+            # 2. (Optional) Build a normalized similarity score
+            # The denominator prevents bias from sequences of different lengths
+            denominator = np.sqrt(self_scores[i] * self_scores[j])
+            if denominator == 0:
+                 normalized_similarity = 0.0
+            else:
+                 normalized_similarity = raw_score / denominator
+
+            # 3. Convert similarity score to distance
+            distance = 1.0 - normalized_similarity
+            
+            # Ensure distance is non-negative
+            if distance < 0:
+                distance = 0.0
+            
+            # 4. Build complete distance matrix (symmetrically)
+            dist_matrix[i, j] = dist_matrix[j, i] = distance
+            
+    return dist_matrix, seq_ids
+```
+
+# Step 4: Neighbor-Joining Algorithm for Tree Construction
+
+```{python}
+def neighbor_joining(distance_matrix: np.ndarray, labels: List[str]) -> str:
+    """
+    Implements the Neighbor-Joining algorithm for phylogenetic tree construction.
+
+    Args:
+        distance_matrix (np.ndarray): The distance matrix from Smith-Waterman scores.
+        labels (List[str]): Sequence identifiers corresponding to the matrix indices.
+
+    Returns:
+        str: The phylogenetic tree in Newick format.
+    """
+    # Make a copy to modify
+    dist_mat = distance_matrix.copy()
+    
+    # Keep track of active nodes (initially all labels)
+    active_labels = labels[:]
+    
+    # Store the tree structure as Newick strings for each node
+    newick_nodes = {label: label for label in labels}
+
+    while len(active_labels) > 2:
+        n = len(active_labels)
+        
+        # 1. Calculate Q-matrix
+        total_distances = np.sum(dist_mat, axis=1)
+        q_matrix = np.zeros_like(dist_mat)
+        for i in range(n):
+            for j in range(i + 1, n):
+                q_matrix[i, j] = (n - 2) * dist_mat[i, j] - total_distances[i] - total_distances[j]
+                q_matrix[j, i] = q_matrix[i, j]
+        
+        # 2. Find pair (i, j) with minimum Q(i, j)
+        # Set diagonal to infinity to avoid picking it
+        np.fill_diagonal(q_matrix, np.inf)
+        min_q_val = np.min(q_matrix)
+        min_indices = np.where(q_matrix == min_q_val)
+        i, j = min_indices[0][0], min_indices[1][0]
+        
+        # 3. Calculate branch lengths
+        r_i = total_distances[i]
+        r_j = total_distances[j]
+        dist_ij = dist_mat[i, j]
+        
+        limb_len_i = (dist_ij + (r_i - r_j) / (n - 2)) / 2.0
+        limb_len_j = dist_ij - limb_len_i
+
+        # 4. Create new node k and its Newick string representation
+        new_node_label = f"({newick_nodes[active_labels[i]]}:{limb_len_i:.4f},{newick_nodes[active_labels[j]]}:{limb_len_j:.4f})"
+        
+        # 5. Update distances to remaining nodes x
+        new_distances = np.zeros(n)
+        for x in range(n):
+            new_distances[x] = (dist_mat[i, x] + dist_mat[j, x] - dist_ij) / 2.0
+        
+        # 6 & 7. Remove nodes i and j, add node k, and reduce the matrix
+        # Create a new, smaller matrix
+        new_n = n - 1
+        new_dist_mat = np.zeros((new_n, new_n))
+        
+        # Create new labels list
+        new_active_labels = []
+        
+        # Add the new node first
+        new_active_labels.append(new_node_label)
+        
+        # Copy over old distances
+        col_idx = 1
+        for k in range(n):
+            if k != i and k != j:
+                new_active_labels.append(active_labels[k])
+                new_dist_mat[0, col_idx] = new_dist_mat[col_idx, 0] = new_distances[k]
+                col_idx += 1
+        
+        # Copy the rest of the old matrix
+        new_row = 1
+        for k in range(n):
+            if k == i or k == j: continue
+            new_col = 1
+            for l in range(n):
+                if l == i or l == j: continue
+                new_dist_mat[new_row, new_col] = dist_mat[k, l]
+                new_col += 1
+            new_row += 1
+            
+        dist_mat = new_dist_mat
+        active_labels = new_active_labels
+        newick_nodes = {label: label for label in active_labels} # Reset mapping
+        newick_nodes[new_node_label] = new_node_label
+
+    # 8. Termination: Join the last two nodes
+    final_dist = dist_mat[0, 1]
+    tree = f"({active_labels[0]}:{final_dist / 2:.4f},{active_labels[1]}:{final_dist / 2:.4f});"
+
+    return tree
+```
+
+# Step 5: Tree Visualization
+
+```{python}
+
+def plot_tree(newick_tree: str, filename: str = "phylogenetic_tree.png") -> None:
+    """
+    Plots a phylogenetic tree from a Newick format string using BioPython and Matplotlib.
+    
+    Args:
+        newick_tree (str): The tree in Newick format.
+        filename (str): The name of the file to save the tree image to.
+    """
+    try:
+        # 1. Use StringIO to treat the Newick string as a file
+        handle = StringIO(newick_tree)
+        
+        # 2. Use Bio.Phylo to parse the Newick string into a tree object
+        tree = Phylo.read(handle, "newick")
+        
+        # 3. Set up the plot using matplotlib
+        # We create a large figure to make sure the labels are readable
+        fig, ax = plt.subplots(figsize=(12, 12))
+        
+        # 4. Use Bio.Phylo.draw() to draw the tree on the axes
+        # 'do_show=False' prevents it from trying to open an interactive window
+        # which can be tricky in some environments.
+        Phylo.draw(tree, axes=ax, do_show=False)
+        
+        # 5. Clean up the plot
+        ax.set_title("Phylogenetic Tree of HIV-1 RT Sequences")
+        ax.set_xlabel("")  # Hide x-axis label
+        ax.set_ylabel("")  # Hide y-axis label
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+        ax.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
+
+        # 6. Save the figure to a file
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        print(f"\nTree successfully saved to {filename}")
+        print("You can view the image file in your working directory.")
+
+    except ImportError:
+        print("\nError: BioPython or Matplotlib is not installed correctly.")
+        print("Please run the following in your R console:")
+        print("reticulate::py_install(c('biopython', 'matplotlib'))")
+    except Exception as e:
+        print(f"\nCould not plot the tree. Error: {e}")
+```
+
+# Main
+
+```{python}
+
+import os
+# wk_dir = "/Users/y/Documents/BINF6250/project06"
+wk_dir = "/courses/BINF6250.202610/students/feng.tiang/project_06"
+os.chdir(wk_dir)
+
+if __name__ == "__main__":
+    # Note: Ensure the FASTA file is in the same directory as this script,
+    # or provide the full path to the file.
+    fasta_file = "lafayette_SARS_RT.fasta"
+    
+    try:
+        # 1. Read HIV RT sequences
+        print(f"Reading sequences from {fasta_file}...")
+        sequences = read_fasta(fasta_file)
+        print(f"Found {len(sequences)} sequences.")
+        
+        # 2. Build distance matrix using Smith-Waterman
+        print("Building distance matrix... (This may take a while)")
+        dist_matrix, seq_ids = build_distance_matrix(sequences)
+        print("Distance matrix built successfully.")
+        
+        # 3. Generate unrooted tree using Neighbor-Joining
+        print("Constructing tree with Neighbor-Joining algorithm...")
+        tree_newick = neighbor_joining(dist_matrix, seq_ids)
+        print("Tree construction complete.")
+        print("\nNewick Tree String:")
+        print(tree_newick)
+        
+        # 4. Plot tree
+        print("\nPreparing to plot the tree...")
+        plot_tree(tree_newick)
+
+    except FileNotFoundError:
+        print(f"Error: The file '{fasta_file}' was not found.")
+        print("Please make sure the FASTA file is in the correct location.")
+    except ImportError:
+        print("Error: The 'ete3' library is not installed.")
+        print("Please install it by running: pip install ete3 six")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+```
